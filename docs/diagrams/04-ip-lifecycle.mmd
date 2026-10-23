@@ -1,0 +1,12 @@
+%% IP address life cycle, derived from ip_assignments (open means upper(during) is null).
+stateDiagram-v2
+  [*] --> free : in the fixed pool
+  free --> held : server created, Add IP, or restore (IP row locked)
+  held --> held : move to another server, old period closed and new one opened in one tx
+  held --> free : release, or holder terminated or failed
+  note right of held
+    At most one open assignment per IP at any moment
+    (EXCLUDE ip_id with =, during with &&).
+    Billed per UTC hour while the holder server runs.
+    One charge per IP and hour; the first holder in that hour pays.
+  end note

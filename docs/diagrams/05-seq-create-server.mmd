@@ -1,0 +1,41 @@
+%% Creating a server while the infrastructure fails and lies (apps/api/src/servers.ts, workers.ts).
+sequenceDiagram
+  autonumber
+  actor Staff
+  participant API
+  participant DB as PostgreSQL
+  participant W as Provision worker
+  participant Infra as Fake infrastructure
+
+  Staff->>API: POST /api/servers, Idempotency-Key K
+  API->>DB: BEGIN, SELECT server by (customer_id, K)
+  alt retry with the same key
+    API-->>Staff: 200, the server of the first request
+  else first request
+    API->>DB: customer FOR SHARE (not suspended, balance above 0)
+    API->>DB: INSERT server ON CONFLICT (customer_id, K) DO NOTHING
+    Note over DB: a concurrent retry loses the conflict and answers with the winner
+    API->>DB: free IP FOR UPDATE SKIP LOCKED, INSERT assignment, COMMIT
+    API-->>Staff: 201, status pending
+  end
+
+  loop every second
+    W->>DB: claim pending rows (lease, SKIP LOCKED)
+    W->>Infra: GET /servers?tag=server.id
+    alt lookup failed
+      W->>DB: retry later, never create blindly
+    else a server with our tag exists
+      W->>DB: adopt it: infra_id (UNIQUE), status provisioning
+    else nothing exists
+      W->>Infra: POST /servers with tag server.id
+      alt 201
+        W->>DB: adopt infra_id
+      else 500, 503 or timeout (it may have happened)
+        W->>DB: attempts + 1, backoff, next try starts with the lookup
+      end
+    end
+  end
+
+  W->>Infra: GET /servers/infra_id (poll)
+  Infra-->>W: running
+  W->>DB: status running, INSERT server_usage from app_now(), COMMIT

@@ -1,0 +1,17 @@
+%% Parts of the system and how they talk. Matches docker-compose.yml and apps/*/src.
+flowchart LR
+  browser["Admin panel<br/>React SPA (apps/web)"]
+  subgraph api_box["api container (apps/api)"]
+    http["HTTP API<br/>Fastify, strict zod input,<br/>role check per route"]
+    workers["Workers (same process)<br/>provision · poll · terminate<br/>reconcile · billing"]
+    static["Static files<br/>built SPA"]
+  end
+  db[("PostgreSQL 17<br/>rules as constraints,<br/>app_now() clock")]
+  infra["Fake infrastructure (apps/infra)<br/>slow · fails · lies<br/>in-memory servers"]
+
+  browser -- "JSON over HTTP, Bearer token" --> http
+  browser -- "GET /, /assets" --> static
+  http -- "SQL in transactions" --> db
+  workers -- "SQL, leases with SKIP LOCKED" --> db
+  workers -- "HTTP with timeouts:<br/>create(tag), get, list, delete" --> infra
+  http -. "PUT /_chaos (owner only, demo)" .-> infra

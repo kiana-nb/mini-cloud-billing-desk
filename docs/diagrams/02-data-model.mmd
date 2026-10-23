@@ -1,0 +1,66 @@
+%% Data model (apps/api/migrations/001_schema.sql). [R#] = rule enforced by the database, see README.
+erDiagram
+  customers ||--o{ customer_statuses : "has, several open at once"
+  customers ||--o{ servers : owns
+  customers ||--o{ ledger_entries : "balance = sum(amount)"
+  servers ||--o{ server_usage : "ran during"
+  servers ||--o{ ip_assignments : "holds"
+  ip_addresses ||--o{ ip_assignments : "assigned in"
+  prices ||--o{ ledger_entries : "price of a charge"
+  ledger_entries |o--o| ledger_entries : "refund_of"
+  billing_runs ||--o{ ledger_entries : created
+  billing_runs ||--o{ billing_failures : reports
+
+  customer_statuses {
+    uuid customer_id FK
+    enum status "verified, payment_notice, suspended"
+    timestamptz set_at
+    timestamptz cleared_at "R2 one open row per status"
+  }
+  servers {
+    uuid id PK "also the infrastructure tag"
+    uuid customer_id FK "R5 never changes"
+    enum status "pending to terminated or failed"
+    text infra_id UK "R3 tracked at most once"
+    text idempotency_key "R4 unique per customer"
+  }
+  server_usage {
+    uuid server_id FK
+    tstzrange during "R6 no overlap per server"
+  }
+  ip_addresses {
+    int id PK
+    inet address UK "fixed pool of 50"
+  }
+  ip_assignments {
+    int ip_id FK "R8 EXCLUDE ip_id with =, during with &&"
+    uuid server_id FK "R7 FK server_id plus customer_id"
+    uuid customer_id FK
+    tstzrange during "R9 trigger: server alive"
+    text request_key
+  }
+  ledger_entries {
+    bigint id PK "R10 append-only"
+    enum kind "topup, charge, refund"
+    bigint amount "integer credits"
+    text idempotency_key "R12 top-up once per key"
+    uuid server_id "R13 unique with hour_start"
+    int ip_id "R14 unique with hour_start"
+    uuid holder_server_id "server that held the IP"
+    timestamptz hour_start "R11 whole UTC hour"
+    bigint refund_of "R15 R16 once, exact amount"
+  }
+  prices {
+    enum resource "server, ip"
+    bigint amount_per_hour
+    timestamptz effective_from "whole hour"
+  }
+  billing_runs {
+    bigint id PK
+    timestamptz as_of "app clock"
+  }
+  billing_failures {
+    bigint run_id FK
+    text resource_id
+    text error
+  }

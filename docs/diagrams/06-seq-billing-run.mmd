@@ -1,0 +1,22 @@
+%% Billing run (apps/api/src/billing.ts). Two runs may overlap; one may crash halfway.
+sequenceDiagram
+  autonumber
+  participant A as Billing run A
+  participant B as Billing run B, same moment
+  participant DB as PostgreSQL
+
+  A->>DB: INSERT billing_runs, as_of = app_now()
+  B->>DB: INSERT billing_runs, as_of = app_now()
+  A->>DB: candidates: resources used after their last charged hour
+  B->>DB: the same candidates
+  loop each resource in its own transaction
+    A->>DB: INSERT a charge per due hour, ON CONFLICT (resource, hour_start) DO NOTHING
+    B->>DB: the same INSERT for the same rows
+    Note over DB: B waits on the unique index entry, then skips what A committed
+    alt the item fails (bad record)
+      A->>DB: INSERT billing_failures, continue with the next item
+    end
+  end
+  Note over A: a crash here keeps the committed items, the next run inserts only what is missing
+  A->>DB: UPDATE billing_runs with counts and finished_at
+  Note over DB: after downtime the next run recomputes every hour from usage history, so missed hours are charged once

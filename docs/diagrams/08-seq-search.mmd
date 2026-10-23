@@ -1,0 +1,25 @@
+%% Searching in the server list (apps/web/src/pages/ServerList.tsx, lib/useLatestRequest.ts).
+sequenceDiagram
+  autonumber
+  actor Staff
+  participant UI as Server list
+  participant URL as URL query string
+  participant Hook as useLatestRequest
+  participant API
+
+  Staff->>UI: types "w"
+  UI->>URL: after 300 ms, replace with ?q=w
+  URL->>Hook: key changed, request 1
+  Hook->>API: GET /api/servers?q=w (slow)
+  Staff->>UI: types "e"
+  UI->>URL: replace with ?q=we
+  URL->>Hook: key changed, abort 1, request 2
+  Hook->>API: GET /api/servers?q=we
+  API-->>Hook: answer 2
+  Hook->>UI: 2 is the newest, show it
+  API-->>Hook: answer 1 arrives late (the server ignored the abort)
+  Hook--xUI: 1 is not the newest, dropped
+  alt the request fails
+    Hook->>UI: error state with Retry, never an empty list
+  end
+  Note over URL: a reload or a shared link reads the state back from the URL. Unknown values are dropped before calling the API, which rejects unknown parameters

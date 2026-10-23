@@ -1,0 +1,16 @@
+%% Server life cycle (servers.status). Billing runs only inside server_usage periods.
+stateDiagram-v2
+  [*] --> pending : POST /api/servers (row and IP in one tx)
+  pending --> provisioning : linked (found by tag or created)
+  pending --> pending : infra error means unknown, retry with lookup first
+  pending --> failed : gave up after 8 attempts, IP released
+  provisioning --> running : infra says running, usage period opens
+  provisioning --> pending : 404, recreate
+  pending --> terminating : terminate requested
+  provisioning --> terminating : terminate requested
+  running --> terminating : terminate requested, usage and IPs closed now
+  terminating --> terminated : delete confirmed (OK, 404, or GET says gone)
+  running --> terminated : reconciler found it vanished, billing stops
+  terminated --> pending : restore within 24 h, old IP if free
+  failed --> [*]
+  terminated --> [*] : restore window passed, row kept

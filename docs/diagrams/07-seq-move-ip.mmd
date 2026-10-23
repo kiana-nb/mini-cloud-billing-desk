@@ -1,0 +1,20 @@
+%% Two staff members move the same IP at once (apps/api/src/servers.ts, moveIp).
+sequenceDiagram
+  autonumber
+  actor A as Staff A
+  actor B as Staff B
+  participant API
+  participant DB as PostgreSQL
+
+  A->>API: POST /api/ips/7/move, from S1 to S2
+  B->>API: POST /api/ips/7/move, from S1 to S3
+  API->>DB: tx A: SELECT ip 7 FOR UPDATE
+  API->>DB: tx B: SELECT ip 7 FOR UPDATE (waits)
+  API->>DB: tx A: the open assignment is on S1, as expected
+  API->>DB: tx A: close it at app_now(), INSERT assignment for S2 from now
+  Note over DB: trigger locks S2 FOR SHARE and checks it is alive, FK checks S2 and its customer
+  API->>DB: tx A: COMMIT
+  API-->>A: 200, moved
+  DB-->>API: tx B gets the lock, the open assignment is now on S2
+  API-->>B: 409 ip_not_on_source
+  Note over DB: without the lock, the INSERT of B would overlap the one of A and the EXCLUDE constraint rejects it (23P01)

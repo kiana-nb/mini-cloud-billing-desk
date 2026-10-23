@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Mini-Cloud Billing Desk</title>
+<style>
+  @page { size: 1280px 720px; margin: 0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: #fff; color: #1b1f24; font-family: 'Segoe UI', system-ui, sans-serif; }
+  .slide { width: 1280px; height: 720px; padding: 44px 60px; page-break-after: always; break-after: page; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+  .slide:last-child { page-break-after: auto; }
+  h1 { font-size: 46px; margin: 0 0 12px; }
+  h2 { font-size: 30px; margin: 0 0 18px; color: #1d3f9e; }
+  h3 { font-size: 19px; margin: 12px 0 6px; }
+  p, li { font-size: 18px; line-height: 1.42; margin: 0 0 6px; }
+  ul { margin: 0; padding-left: 22px; }
+  code { font-family: Consolas, monospace; font-size: 0.9em; background: #f0f2f5; padding: 1px 4px; border-radius: 3px; }
+  .muted { color: #5f6b7a; }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 36px; flex: 1; min-height: 0; }
+  .cols-3-2 { grid-template-columns: 3fr 2fr; }
+  .diagram { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .diagram .mm { width: 100%; height: 100%; }
+  .diagram svg { width: 100% !important; height: 100% !important; max-width: none !important; }
+  .mm-error { color: #b03a2e; font-weight: 700; }
+  .tight li { font-size: 16px; margin-bottom: 3px; }
+  table { border-collapse: collapse; width: 100%; font-size: 15.5px; }
+  th, td { border-bottom: 1px solid #dde1e6; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { color: #5f6b7a; font-weight: 600; }
+  .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .yes { background: #e3f5ea; color: #1e7e4a; }
+  .no { background: #fdeceb; color: #b03a2e; }
+  .footer { position: absolute; bottom: 18px; right: 60px; font-size: 13px; color: #97a1ae; }
+  .title-slide { justify-content: center; }
+  .title-slide h1 { font-size: 60px; }
+</style>
+</head>
+<body>
+
+<section class="slide title-slide">
+  <h1>Mini-Cloud Billing Desk</h1>
+  <p style="font-size:24px">Full-stack take-home: billing that stays correct when things go wrong</p>
+  <p class="muted" style="margin-top:28px">TypeScript · Node 24 · Fastify · PostgreSQL 17 · React 19 · Docker Compose</p>
+  <p class="muted">Every diagram is generated from <code>docs/diagrams/*.mmd</code> and drawn from the code as built.</p>
+</section>
+
+<section class="slide">
+  <h2>What I built, and what I left out</h2>
+  <div class="cols">
+    <div>
+      <h3>Required</h3>
+      <ul class="tight">
+        <li>Fake infrastructure: slow, unreliable, dishonest (configurable)</li>
+        <li>Wallet as an append-only ledger; retry-safe top-ups</li>
+        <li>Servers, IP pool, moves across customers, hourly billing</li>
+        <li>Owner / support / viewer enforced by the server</li>
+        <li>Strict input: unknown parameters are a 400</li>
+        <li>Admin panel: URL state, stale-safe search, loading / empty / failed</li>
+        <li>Testable clock that only moves forward</li>
+        <li>Challenges 1-3, each with an automated test</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Optional challenges</h3>
+      <table>
+        <tr><td>The infrastructure lies (drift repair)</td><td><span class="tag yes">built</span></td></tr>
+        <tr><td>Downtime: missed hours charged once</td><td><span class="tag yes">built</span></td></tr>
+        <tr><td>Restore within 24 h, old IP if free</td><td><span class="tag yes">built</span></td></tr>
+        <tr><td>One bad record does not stop billing</td><td><span class="tag yes">built</span></td></tr>
+        <tr><td>Price change from the next hour</td><td><span class="tag yes">built</span></td></tr>
+        <tr><td>Running out of money (notice, suspend, terminate)</td><td><span class="tag no">not built</span></td></tr>
+      </table>
+      <p class="muted" style="margin-top:12px">Statuses (verified, payment notice, suspended) exist and suspension blocks new servers, but no job moves a customer through them yet.</p>
+    </div>
+  </div>
+  <div class="footer">2</div>
+</section>
+
+<section class="slide">
+  <h2>Parts of the system</h2>
+  <div class="diagram"><!-- diagram:01-components --></div>
+  <p class="muted">One command starts db, infra and api; the api also serves the built panel. Workers run in the api process and use leases, so several api instances can run.</p>
+  <div class="footer">3</div>
+</section>
+
+<section class="slide">
+  <h2>Data model: rules the database enforces</h2>
+  <div class="cols cols-3-2">
+    <div class="diagram"><!-- diagram:02-data-model --></div>
+    <div>
+      <ul class="tight">
+        <li><b>R13/R14</b> unique (server or IP, hour): a charge exists once</li>
+        <li><b>R8</b> <code>EXCLUDE (ip_id =, during &amp;&amp;)</code>: one holder per IP at any moment</li>
+        <li><b>R7</b> FK (server, customer): the payer of an IP is the owner of its server</li>
+        <li><b>R9</b> trigger: IPs only attach to alive servers (locks the server row)</li>
+        <li><b>R10</b> ledger is append-only (update / delete / truncate raise)</li>
+        <li><b>R11</b> a charge is one resource and one whole UTC hour</li>
+        <li><b>R12/R4</b> idempotency keys for top-ups and server creation</li>
+        <li><b>R15/R16</b> a charge is refunded once, by its exact amount</li>
+        <li><b>R3</b> an infrastructure server is tracked by at most one record</li>
+        <li><b>R1</b> the application clock only moves forward</li>
+      </ul>
+      <p class="muted">Money is <code>bigint</code> credits; all times are <code>timestamptz</code> in UTC.</p>
+    </div>
+  </div>
+  <div class="footer">4</div>
+</section>
+
+<section class="slide">
+  <h2>Life cycle of a server</h2>
+  <div class="diagram"><!-- diagram:03-server-lifecycle --></div>
+  <p class="muted">Billing follows <code>server_usage</code> periods, which open at "running" and close at the termination request, not at the infrastructure's confirmation.</p>
+  <div class="footer">5</div>
+</section>
+
+<section class="slide">
+  <h2>Life cycle of an IP address</h2>
+  <div class="diagram"><!-- diagram:04-ip-lifecycle --></div>
+  <p class="muted">An IP is billed for the time it is attached to a server that runs: the intersection of the assignment period and the usage period.</p>
+  <div class="footer">6</div>
+</section>
+
+<section class="slide">
+  <h2>Creating a server when the infrastructure fails or lies</h2>
+  <div class="diagram"><!-- diagram:05-seq-create-server --></div>
+  <div class="footer">7</div>
+</section>
+
+<section class="slide">
+  <h2>The billing run: concurrent, crashed, or late</h2>
+  <div class="diagram"><!-- diagram:06-seq-billing-run --></div>
+  <div class="footer">8</div>
+</section>
+
+<section class="slide">
+  <h2>Moving an IP, twice at the same moment</h2>
+  <div class="diagram"><!-- diagram:07-seq-move-ip --></div>
+  <div class="footer">9</div>
+</section>
+
+<section class="slide">
+  <h2>Searching in the UI</h2>
+  <div class="diagram"><!-- diagram:08-seq-search --></div>
+  <div class="footer">10</div>
+</section>
+
+<section class="slide">
+  <h2>Main decisions and the alternatives I rejected</h2>
+  <table>
+    <tr><th style="width:30%">Decision</th><th style="width:36%">Why</th><th>Rejected</th></tr>
+    <tr><td>Catch-up billing: recompute due hours, insert missing ones</td><td>Retries, crashes, overlap and downtime all converge; no job state to lose</td><td>"Bill the last hour" cron job (gaps after downtime, duplicates on retry)</td></tr>
+    <tr><td>Unique index + <code>ON CONFLICT DO NOTHING</code></td><td>The database decides exactly-once, under any interleaving</td><td>Check-then-insert, advisory lock as the only guard</td></tr>
+    <tr><td>Clock-aligned UTC hours, first holder pays a shared hour</td><td>One simple key per hour makes "one payer per IP-hour" a constraint</td><td>Hours relative to each start (two customers could pay overlapping hours)</td></tr>
+    <tr><td>IP history as ranges with an exclusion constraint</td><td>Overlap is impossible, history is kept for audits</td><td>A <code>server_id</code> column on the IP (no history, no DB guard)</td></tr>
+    <tr><td>Our id as the infrastructure tag; look up before create</td><td>An unclear create can always be resolved, never duplicated</td><td>Retrying create on error (double servers)</td></tr>
+    <tr><td>Raw SQL, no ORM; strict zod schemas</td><td>Constraints and locks stay visible and reviewable</td><td>ORM with implicit queries; JSON-schema with silent stripping</td></tr>
+    <tr><td>Sequence number + abort in one hook</td><td>Works even when the server ignores the abort</td><td>Abort only; a global data cache</td></tr>
+  </table>
+  <div class="footer">11</div>
+</section>
+
+<section class="slide">
+  <h2>Challenges: how, and which test proves it</h2>
+  <table>
+    <tr><th style="width:22%">Challenge</th><th style="width:40%">How</th><th>Test (all in the repo, run by <code>npm test</code>)</th></tr>
+    <tr><td><b>Exactly-once billing</b></td><td>Unique (resource, hour) + ON CONFLICT; one transaction per resource</td><td><code>billing.test.ts</code>: two runs at once; crash halfway then rerun. <i>Seen failing</i> with check-then-insert: 280 charges instead of 150</td></tr>
+    <tr><td><b>One IP, one payer</b></td><td>Exclusion constraint on assignment ranges, IP row lock, expected source</td><td><code>ip.test.ts</code>: 10 rounds of two simultaneous moves; DB refuses overlap; IP bounced between customers billed once per hour. Passes even with the app lock removed</td></tr>
+    <tr><td><b>Stale search</b></td><td>Sequence check + abort in <code>useLatestRequest</code></td><td><code>stale-search.test.tsx</code>: old answer resolved after the new one. <i>Seen failing</i> without the sequence check</td></tr>
+    <tr><td>Infrastructure lies</td><td>Tag lookup before create, confirmed deletes, reconciler</td><td><code>workers.test.ts</code>: scripted lies, orphans, duplicates, 30%/30% random chaos</td></tr>
+    <tr><td>Downtime · bad record · price</td><td>Catch-up recompute · per-item transactions · price per hour row</td><td><code>billing.test.ts</code></td></tr>
+    <tr><td>Restore</td><td>Prefer the last IP if free, 24 h window</td><td><code>ip.test.ts</code></td></tr>
+    <tr><td>Roles, strict input, retries</td><td>Permission per route, strict schemas, idempotency keys</td><td><code>http.test.ts</code></td></tr>
+  </table>
+  <p class="muted">54 automated tests (4 infrastructure, 44 API against a real PostgreSQL, 6 frontend). Regression notes with the observed failures: <code>docs/regression-evidence.md</code>.</p>
+  <div class="footer">12</div>
+</section>
+
+<section class="slide">
+  <h2>What is not safe yet, and what I would do next</h2>
+  <div class="cols">
+    <ul class="tight">
+      <li><b>Billing cost grows with history.</b> Each run recomputes from all usage periods. Next: a per-resource "billed through" watermark and partitioned ledger.</li>
+      <li><b>Negative balances are allowed.</b> Charges are postpaid; nothing notifies or suspends yet. Next: the dunning flow with a recorded notice as a precondition (FK) for suspension.</li>
+      <li><b>A server lost by the infrastructure</b> is billed until the reconciler confirms it is gone (every 20 s in the Compose setup). Next: use the infrastructure's own stop time if it offers one.</li>
+      <li><b>Billing stops at the termination request</b>, even if the delete takes longer. A deliberate customer-friendly choice; we absorb the cost.</li>
+    </ul>
+    <ul class="tight">
+      <li><b>No monitoring.</b> Failed billing items and drift are stored and shown, but nothing alerts. Next: metrics and an alert on <code>billing_failures</code>.</li>
+      <li><b>Auth is minimal.</b> Bearer token in localStorage, no login rate limit, no password reset. Next: httpOnly cookie, rate limiting, SSO.</li>
+      <li><b>The fake infrastructure keeps state in memory.</b> Restarting it makes every server vanish; the reconciler then stops billing them (correct for the fake, noisy in a demo).</li>
+      <li><b>Search uses ILIKE.</b> Fine for this size; next: trigram indexes or keyset paging.</li>
+      <li><b>Docker Compose</b> was written but could not be run on my machine (Docker engine did not start); the same commands were run natively against PostgreSQL.</li>
+    </ul>
+  </div>
+  <div class="footer">13</div>
+</section>
+
+<section class="slide">
+  <h2>"You charged us for an IP we removed yesterday." Are they right?</h2>
+  <div class="cols">
+    <div>
+      <ol class="tight" style="padding-left:22px">
+        <li>Open <b>IP pool → the address</b> (<code>/ips/:id</code>). "Who held it" shows every assignment with its period; the removal is the <code>until</code> of their last row. <code>audit_log</code> (<code>ip.release</code>, <code>ip.move</code> or <code>server.terminate</code>) says who did it and when.</li>
+        <li>The same page lists every hourly charge of that IP with the payer and the server that held it.</li>
+        <li>Rule: the hour in which it was removed is charged (a started hour counts), later hours must belong to someone else or no one.</li>
+        <li>If a charge to them starts after that hour, they are right: refund it from the customer page (once, exact amount, enforced) and treat it as a bug.</li>
+      </ol>
+    </div>
+    <div>
+      <pre style="font-size:14px;background:#f6f7f9;padding:14px;border-radius:8px;white-space:pre-wrap">-- charges to the customer after the hour they let go of the IP
+select l.id, l.hour_start, l.amount
+from ledger_entries l
+where l.ip_id = $ip and l.customer_id = $customer
+  and l.kind = 'charge'
+  and l.hour_start &gt;= date_trunc('hour',
+      (select max(upper(during)) from ip_assignments
+       where ip_id = $ip and customer_id = $customer), 'UTC')
+      + interval '1 hour'
+  and not exists (select 1 from ip_assignments a
+       join server_usage u on u.server_id = a.server_id
+       where a.ip_id = l.ip_id and a.customer_id = l.customer_id
+         and a.during * u.during &amp;&amp;
+             tstzrange(l.hour_start, l.hour_start + interval '1 hour'));</pre>
+      <p class="muted">Empty result: the charges are correct, and the IP page shows them why.</p>
+    </div>
+  </div>
+  <div class="footer">14</div>
+</section>
+
+<section class="slide">
+  <h2>Run it, test it, demo it</h2>
+  <div class="cols">
+    <div>
+      <h3>Start</h3>
+      <p><code>docker compose up --build</code> → <code>http://localhost:8080</code></p>
+      <p class="muted">owner@ / support@ / viewer@example.com, passwords owner-pass / support-pass / viewer-pass</p>
+      <h3>Test</h3>
+      <p><code>docker compose --profile test run --rm test</code></p>
+      <p class="muted">or <code>npm test</code> with <code>TEST_DATABASE_URL</code> pointing at a PostgreSQL</p>
+    </div>
+    <div>
+      <h3>Demo script</h3>
+      <ol class="tight" style="padding-left:22px">
+        <li>Servers: seeded servers go pending → running through the lying infra; Operations → drift lists any adoption or clean-up.</li>
+        <li>Search "acme" + status running; reload; the state stays.</li>
+        <li>Operations: +1 hour, run billing twice: the second run adds 0 charges.</li>
+        <li>Server page: move its IP to another customer; the IP page shows one payer per hour.</li>
+        <li>Sign in as support: no top-up button, and the API answers 403 anyway.</li>
+        <li>Set "calls that lie" to 50% and create servers: still one infra server each.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="footer">15</div>
+</section>
+
+</body>
+</html>
