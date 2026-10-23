@@ -170,7 +170,7 @@
     <tr><td>Restore</td><td>Prefer the last IP if free, 24 h window</td><td><code>ip.test.ts</code></td></tr>
     <tr><td>Roles, strict input, retries</td><td>Permission per route, strict schemas, idempotency keys</td><td><code>http.test.ts</code></td></tr>
   </table>
-  <p class="muted">54 automated tests (4 infrastructure, 44 API against a real PostgreSQL, 6 frontend). Regression notes with the observed failures: <code>docs/regression-evidence.md</code>.</p>
+  <p class="muted">55 automated tests (4 infrastructure, 45 API against a real PostgreSQL, 6 frontend), also run inside Docker. Regression notes with the observed failures: <code>docs/regression-evidence.md</code>.</p>
   <div class="footer">12</div>
 </section>
 
@@ -188,7 +188,7 @@
       <li><b>Auth is minimal.</b> Bearer token in localStorage, no login rate limit, no password reset. Next: httpOnly cookie, rate limiting, SSO.</li>
       <li><b>The fake infrastructure keeps state in memory.</b> Restarting it makes every server vanish; the reconciler then stops billing them (correct for the fake, noisy in a demo).</li>
       <li><b>Search uses ILIKE.</b> Fine for this size; next: trigram indexes or keyset paging.</li>
-      <li><b>Docker Compose</b> was written but could not be run on my machine (Docker engine did not start); the same commands were run natively against PostgreSQL.</li>
+      <li><b>Docker was verified only on one Windows machine</b> (compose up, healthcheck, full test profile). Not tried on Linux or macOS.</li>
     </ul>
   </div>
   <div class="footer">13</div>
@@ -234,7 +234,7 @@ where l.ip_id = $ip and l.customer_id = $customer
       <p><code>docker compose up --build</code> → <code>http://localhost:8080</code></p>
       <p class="muted">owner@ / support@ / viewer@example.com, passwords owner-pass / support-pass / viewer-pass</p>
       <h3>Test</h3>
-      <p><code>docker compose --profile test run --rm test</code></p>
+      <p><code>docker compose --profile test run --build --rm test</code></p>
       <p class="muted">or <code>npm test</code> with <code>TEST_DATABASE_URL</code> pointing at a PostgreSQL</p>
     </div>
     <div>

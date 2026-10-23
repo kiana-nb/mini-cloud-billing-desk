@@ -36,7 +36,7 @@ Services: `db` (PostgreSQL 17), `infra` (fake infrastructure, port 4001 inside t
 With Docker only:
 
 ```bash
-docker compose --profile test run --rm test
+docker compose --profile test run --build --rm test
 ```
 
 Locally (Node 24, PostgreSQL 14+ with `btree_gist`, which ships with PostgreSQL):
@@ -46,13 +46,14 @@ npm ci
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npm test
 ```
 
-Each API test file creates and drops its own database. 54 tests:
+Each API test file creates and drops its own database. 55 tests:
 
 | Suite | What it proves |
 |---|---|
 | `apps/api/test/billing.test.ts` | exactly-once billing with two concurrent runs and with a crash halfway; downtime; one bad record; price change; IP paid by the first holder of an hour |
 | `apps/api/test/ip.test.ts` | one IP, one payer: simultaneous moves, overlap refused by the database, moves racing a termination, restore |
 | `apps/api/test/workers.test.ts` | the infrastructure lies: adopt instead of duplicate, confirmed deletes, orphan/duplicate/late-create clean-up, seeded random chaos |
+| `apps/api/test/db.test.ts` | the API survives the database dropping idle connections |
 | `apps/api/test/http.test.ts` | roles enforced by the server, strict input, retry-safe top-ups and creates, append-only ledger, forward-only clock, asset serving |
 | `apps/web/test/stale-search.test.tsx` | stale search results never replace newer ones; URL state; loading / empty / failed |
 | `apps/infra/test/infra.test.ts` | the fake infrastructure is slow, unreliable and dishonest |

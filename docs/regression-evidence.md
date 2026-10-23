@@ -62,3 +62,18 @@ answered the new bundle's URL with `index.html`. The same happens to a browser t
 still open after a deploy. The test failed on the old `app.ts`
 (`expected 'text/html; charset=utf-8' to match /javascript/`) and passes after the fix:
 files are looked up per request and paths with a file extension get a real 404.
+
+## Idle database connections dropped by the server (found by running the tests in Docker)
+
+Test: `apps/api/test/db.test.ts` → "survives the server terminating idle connections, and reconnects".
+
+Found by the Docker test run: all 44 tests passed but the run exited with an error, because
+a pooled connection received a FATAL 57P01 from Postgres and nothing listened for the
+pool's `error` event, which node turns into an uncaught exception. In production the same
+thing would crash the API on every Postgres restart or failover. The new test failed before
+the fix with 5 unhandled errors and passes after adding `pool.on('error', ...)` in `createPool`.
+
+## Healthcheck used localhost (found by starting the stack in Docker)
+
+The api container stayed `health: starting` although the API worked: inside the Alpine image
+`localhost` resolves to ::1 while the API listens on IPv4. The healthcheck now uses 127.0.0.1.
