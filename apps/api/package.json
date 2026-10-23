@@ -1,0 +1,20 @@
+{
+  "name": "@billing-desk/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.7",
+    "fastify": "^5.12.7",
+    "pg": "^8.23.1",
+    "zod": "^3.25.76"
+  }
+}
