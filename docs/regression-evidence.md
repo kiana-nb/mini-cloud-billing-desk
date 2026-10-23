@@ -50,3 +50,15 @@ Experiment (2026-10-23): the sequence check `if (id === latest.current)` in
 
 Aborting alone is not enough: the mocked server (like a real one) can answer anyway, and a
 response already received cannot be cancelled. With the check restored both tests pass.
+
+## Missing asset answered with HTML (found while testing the UI)
+
+Test: `apps/api/test/http.test.ts` → "deep links get the app, a missing asset is a 404 and never HTML".
+
+Found by hand: after rebuilding the web app while the API was running, the page went blank
+with "Expected a JavaScript module script but the server responded with text/html". The
+static plugin only knew the files that existed at start, and the single-page-app fallback
+answered the new bundle's URL with `index.html`. The same happens to a browser tab that is
+still open after a deploy. The test failed on the old `app.ts`
+(`expected 'text/html; charset=utf-8' to match /javascript/`) and passes after the fix:
+files are looked up per request and paths with a file extension get a real 404.

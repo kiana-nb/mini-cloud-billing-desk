@@ -199,3 +199,31 @@ describe('customer rules', () => {
     await expect(db.query("update app_clock set virtual_base = '2000-01-01', real_base = now(), frozen = true")).rejects.toThrow(/forward/);
   });
 });
+
+describe('serving the admin panel', () => {
+  it('deep links get the app, a missing asset is a 404 and never HTML', async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { tmpdir } = await import('node:os');
+    const dist = mkdtempSync(join(tmpdir(), 'web-'));
+    writeFileSync(join(dist, 'index.html'), '<!doctype html><title>app</title>');
+    mkdirSync(join(dist, 'assets'));
+    const web = await buildApp({ db, infra: noInfra, webDist: dist });
+    try {
+      const page = await web.inject({ method: 'GET', url: '/servers/123?q=x' });
+      expect(page.statusCode).toBe(200);
+      expect(page.headers['content-type']).toMatch(/text\/html/);
+      // a bundle that appears after start (a rebuild) is served
+      writeFileSync(join(dist, 'assets', 'new.js'), 'console.log(1)');
+      const fresh = await web.inject({ method: 'GET', url: '/assets/new.js' });
+      expect(fresh.statusCode).toBe(200);
+      expect(fresh.headers['content-type']).toMatch(/javascript/);
+      // a bundle that does not exist (an old tab after a deploy) is a 404, not index.html
+      const missing = await web.inject({ method: 'GET', url: '/assets/old-123.js' });
+      expect(missing.statusCode).toBe(404);
+      expect((await web.inject({ method: 'GET', url: '/api/nope', headers: { authorization: `Bearer ${tokens.viewer}` } })).statusCode).toBe(404);
+    } finally {
+      await web.close();
+    }
+  });
+});
