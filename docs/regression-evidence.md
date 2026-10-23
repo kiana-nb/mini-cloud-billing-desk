@@ -24,3 +24,12 @@ Both runs read "not billed yet" before either committed, so 130 hours were charg
 With the unique indexes and `on conflict do nothing` restored, the same test passes. The
 second run's insert of an already-inserted row waits for the first transaction and then
 skips it, so the database guarantees exactly-once.
+
+## One IP, one payer without the application lock
+
+Test: `apps/api/test/ip.test.ts` → "two simultaneous moves of one IP: exactly one succeeds".
+
+Experiment (2026-10-23): the `for update` on the IP row in `moveIp` was removed. The test
+still passed: in every round one move succeeded and the other failed with `23P01`
+(exclusion violation) from the `ip_assignments` constraint. The rule holds in the database
+even when the application code gets it wrong.
