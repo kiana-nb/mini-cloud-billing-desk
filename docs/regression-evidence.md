@@ -33,3 +33,20 @@ Experiment (2026-10-23): the `for update` on the IP row in `moveIp` was removed.
 still passed: in every round one move succeeded and the other failed with `23P01`
 (exclusion violation) from the `ip_assignments` constraint. The rule holds in the database
 even when the application code gets it wrong.
+
+## Stale search results
+
+Tests: `apps/web/test/stale-search.test.tsx` → "ignores an older answer that arrives after a
+newer one, even if the abort is ignored" and "a slow answer for an older search never
+replaces the newer results".
+
+Experiment (2026-10-23): the sequence check `if (id === latest.current)` in
+`useLatestRequest` was removed, keeping only the AbortController. Both tests failed:
+
+```
+× ignores an older answer that arrives after a newer one, even if the abort is ignored
+× a slow answer for an older search never replaces the newer results
+```
+
+Aborting alone is not enough: the mocked server (like a real one) can answer anyway, and a
+response already received cannot be cancelled. With the check restored both tests pass.
