@@ -1,0 +1,58 @@
+# docker compose up --build            -> admin panel on http://localhost:8080
+# docker compose --profile test run --rm test   -> the whole test suite against a real Postgres
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: billing
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  infra:
+    build: { context: ., target: runtime }
+    command: ["node", "apps/infra/src/main.ts"]
+    environment:
+      PORT: "4001"
+      INFRA_FAIL_RATE: "0.2"   # share of calls that fail without doing anything
+      INFRA_LIE_RATE: "0.1"    # share of calls that do the work but report an error
+      INFRA_PROVISION_MS: "4000"
+      INFRA_LATENCY_MS: "300"
+
+  api:
+    build: { context: ., target: runtime }
+    command: ["node", "apps/api/src/main.ts"]
+    environment:
+      PORT: "4000"
+      DATABASE_URL: postgres://postgres:postgres@db:5432/billing
+      INFRA_URL: http://infra:4001
+      WEB_DIST: /app/apps/web/dist
+      BILLING_EVERY_MS: "60000"
+      RECONCILE_EVERY_MS: "20000"
+    ports:
+      - "8080:4000"
+    depends_on:
+      db: { condition: service_healthy }
+      infra: { condition: service_started }
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:4000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  test:
+    profiles: ["test"]
+    build: { context: ., target: build }
+    command: ["npm", "test"]
+    environment:
+      TEST_DATABASE_URL: postgres://postgres:postgres@db:5432/postgres
+    depends_on:
+      db: { condition: service_healthy }
+
+volumes:
+  db-data:
