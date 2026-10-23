@@ -10,7 +10,12 @@ export type Db = pg.Pool;
 export type Tx = pg.PoolClient;
 
 export function createPool(connectionString: string, max = 10): Db {
-  return new pg.Pool({ connectionString, max, options: '-c timezone=UTC' });
+  const pool = new pg.Pool({ connectionString, max, options: '-c timezone=UTC' });
+  // An idle connection can be dropped by the server at any time (restart, failover,
+  // network). The pool already discards that client; without a listener node would turn
+  // the error event into an uncaught exception and kill the process.
+  pool.on('error', (err) => console.error('idle database connection failed, it will be replaced:', err.message));
+  return pool;
 }
 
 /** Runs `fn` in a transaction. Rolls back on any error and rethrows it. */
